@@ -1,34 +1,97 @@
 name: SonarCloud Analysis
+
 on:
   push:
     branches: [ "master" ]
   pull_request:
     types: [opened, synchronize, reopened]
+
 jobs:
   sonarcloud:
-    name: SonarCloud
+    name: SonarCloud Scan
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: clippy
-      - name: Install dependencies
+
+      - name: Cache cargo and vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            target
+            vcpkg_installed
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+
+      - name: Install system dependencies
         run: |
-          # RustDesk-specific: Install vcpkg, Flutter, etc., as per repo's build docs
           sudo apt-get update
-          sudo apt-get install -y libclang-dev libgtk-3-dev libappindicator3-dev libxdo-dev libayatana-appindicator3-dev
-          cargo install cargo-vcpkg
+          sudo apt-get install -y \
+            libclang-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            libxdo-dev \
+            libayatana-appindicator3-dev \
+            cmake \
+            ninja-build \
+            pkg-config \
+            curl \
+            xz-utils
+
+
+      - name: Build vcpkg dependencies
+        run: |
+          cargo install cargo-vcpkg || true
           cargo vcpkg build
-          # Add Flutter setup if analyzing Dart code: curl -sSf https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.3-stable.tar.xz | tar xf - -C /opt
-          # export PATH="$PATH:/opt/flutter/bin"
-          # flutter doctor
+
+
+      - name: Check for Flutter folder
+        id: flutter_check
+        run: |
+          if [ -d "flutter" ]; then
+            echo "has_flutter=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_flutter=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Flutter
+        if: steps.flutter_check.outputs.has_flutter == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+
+      - name: Install Flutter dependencies
+        if: steps.flutter_check.outputs.has_flutter == 'true'
+        run: |
+          cd flutter
+          flutter pub get
+
+
+      - name: Run Clippy (Rust Lint)
+        run: cargo clippy --message-format=json > clippy-report.json || true
+
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed for PR analysis
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}    # Stored in repository secrets
+
+      - name: Upload Clippy report artifact (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-report
+          path: clippy-report.json
