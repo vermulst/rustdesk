@@ -41,14 +41,14 @@ jobs:
           sudo apt-get install -y \
             libclang-dev \
             libgtk-3-dev \
-            libappindicator3-dev \
-            libxdo-dev \
             libayatana-appindicator3-dev \
+            libxdo-dev \
             cmake \
             ninja-build \
             pkg-config \
             curl \
             xz-utils
+
 
 
       - name: Build vcpkg dependencies
