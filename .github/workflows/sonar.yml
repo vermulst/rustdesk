@@ -51,10 +51,20 @@ jobs:
             xz-utils
 
 
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
 
       - name: Build vcpkg dependencies
         run: |
           cargo install cargo-vcpkg || true
+          git clone https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.sh
+          export VCPKG_ROOT=$PWD/vcpkg
           cargo vcpkg build
 
 
